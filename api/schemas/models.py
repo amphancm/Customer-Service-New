@@ -1,5 +1,7 @@
 from sqlalchemy import Column, Integer, String, Boolean, Float, ForeignKey, Text, UniqueConstraint
 from sqlalchemy.orm import relationship, declarative_base
+import uuid
+from sqlalchemy.dialects.postgresql import UUID 
 
 Base = declarative_base()
 
@@ -38,7 +40,8 @@ class Document(Base):
 
 class ChatRoom(Base):
     __tablename__ = "chatroom"
-    id = Column(Integer, primary_key=True, autoincrement=True)
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     roomName = Column(String, unique=True, nullable=False)
     username = Column(String, ForeignKey("useraccount.username"), nullable=False)
 

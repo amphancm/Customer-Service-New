@@ -15,6 +15,7 @@ import {
 import { Button } from "@/components/ui/button" 
 import natachatLogo from "@/assets/natachat-logo.png"
 import { useNavigate } from "react-router-dom";
+import api from "@/lib/api";
 
 const menuItems = [
   { title: "Chat", url: "/chat", icon: MessageCircle },
@@ -36,6 +37,7 @@ export function AppSidebar() {
   const isCollapsed = state === "collapsed"
 
   const handleLogout = () => {
+    api.clearToken();
     navigate("/")
   }
 

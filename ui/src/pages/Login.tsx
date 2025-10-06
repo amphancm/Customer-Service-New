@@ -7,6 +7,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import natachatLogo from "@/assets/natachat-logo.png";
 import { useNavigate } from "react-router-dom";
+import api from "@/lib/api";
 
 export default function Login() {
   const navigate = useNavigate();
@@ -22,8 +23,17 @@ export default function Login() {
     } else {
       setError("");
 
-      alert("Login clicked!\nUsername: " + username + "\nPassword: " + password);
-      navigate("/chat");
+      // Call backend
+      api
+        .login(username, password)
+        .then((data) => {
+          api.setToken(data.access_token);
+          navigate("/chat");
+        })
+        .catch((err) => {
+          console.error("Login error:", err);
+          setError(err.message || "Login failed");
+        });
     }
   };
 
