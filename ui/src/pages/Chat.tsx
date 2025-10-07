@@ -1,12 +1,29 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Send, Plus, MoreHorizontal, Edit, Trash2, ChevronLeft, ChevronRight, ThumbsUp, ThumbsDown } from "lucide-react"
+import {
+  Send,
+  Plus,
+  MoreHorizontal,
+  Edit,
+  Trash2,
+  ChevronLeft,
+  ChevronRight,
+  ThumbsUp,
+  ThumbsDown,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Layout } from "@/components/Layout"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import chatApi from "@/lib/chat"
+import { getUsernameFromToken } from "@/lib/api"
+import { uniqueNamesGenerator, adjectives, colors, animals } from "unique-names-generator"
 
 interface Room {
   id: string
@@ -20,6 +37,15 @@ interface Message {
   content: string
   timestamp: Date
   feedback?: "up" | "down" | null
+  roomId?: string
+}
+
+function generateRoomName() {
+  return uniqueNamesGenerator({
+    dictionaries: [adjectives, colors, animals],
+    separator: "-",
+    style: "capital",
+  })
 }
 
 export default function Chat() {
@@ -32,6 +58,19 @@ export default function Chat() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
+  const [username, setUsername] = useState<string | null>(null)
+
+  useEffect(() => {
+    const user = getUsernameFromToken()
+    setUsername(user)
+  }, [])
+
+  useEffect(() => {
+    if (error) {
+      const timer = setTimeout(() => setError(null), 3000)
+      return () => clearTimeout(timer)
+    }
+  }, [error])
 
   const suggestedQuestions = ["About Company", "About Role Responsibility", "About Project"]
 
@@ -55,13 +94,58 @@ export default function Chat() {
   }, [])
 
   useEffect(() => {
-    setMessages([])
+    setMessages((prev) => {
+      if (prev.length && currentRoom && prev[0]?.roomId === currentRoom.id) return prev
+      return []
+    })
   }, [currentRoom])
+
+  const handleSendMessage = async () => {
+    if (!message.trim()) return
+    try {
+      let activeRoom = currentRoom
+
+      if (!activeRoom) {
+        const randomName = generateRoomName()
+        const created = await chatApi.createRoom(randomName)
+        activeRoom = { id: created.id, name: created.roomName }
+        setRooms((prev) => [...prev, activeRoom])
+        setCurrentRoom(activeRoom)
+      }
+
+      const userMessage: Message = {
+        id: crypto.randomUUID(),
+        role: "user",
+        content: message,
+        timestamp: new Date(),
+        roomId: activeRoom.id,
+      }
+      setMessages((prev) => [...prev, userMessage])
+      setMessage("")
+
+      const randomResponse = mockResponses[Math.floor(Math.random() * mockResponses.length)]
+      const aiMessage: Message = {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        content: randomResponse,
+        timestamp: new Date(),
+        roomId: activeRoom.id,
+        feedback: null,
+      }
+
+      setTimeout(() => {
+        setMessages((prev) => [...prev, aiMessage])
+      }, 500)
+    } catch {
+      setError("Failed to send message.")
+    }
+  }
 
   const handleCreateRoom = async () => {
     try {
       setLoading(true)
-      const created = await chatApi.createRoom(`Room ${rooms.length + 1}`)
+      const randomName = generateRoomName()
+      const created = await chatApi.createRoom(randomName)
       const newRoom: Room = { id: created.id, name: created.roomName }
       setRooms((prev) => [...prev, newRoom])
       setCurrentRoom(newRoom)
@@ -69,43 +153,6 @@ export default function Chat() {
       setError("Failed to create room.")
     } finally {
       setLoading(false)
-    }
-  }
-
-  const handleSendMessage = async () => {
-    if (!message.trim()) return
-    try {
-      if (!currentRoom) {
-        const created = await chatApi.createRoom("New Chat")
-        const newRoom: Room = { id: created.id, name: created.roomName }
-        setRooms((prev) => [...prev, newRoom])
-        setCurrentRoom(newRoom)
-      }
-
-      // Add user message
-      const userMessage: Message = {
-        id: Date.now().toString(),
-        role: "user",
-        content: message,
-        timestamp: new Date(),
-      }
-      setMessages((prev) => [...prev, userMessage])
-      setMessage("")
-
-      // Simulate AI response after a short delay
-      setTimeout(() => {
-        const randomResponse = mockResponses[Math.floor(Math.random() * mockResponses.length)]
-        const aiMessage: Message = {
-          id: (Date.now() + 1).toString(),
-          role: "assistant",
-          content: randomResponse,
-          timestamp: new Date(),
-          feedback: null,
-        }
-        setMessages((prev) => [...prev, aiMessage])
-      }, 800)
-    } catch {
-      setError("Failed to send message.")
     }
   }
 
@@ -128,8 +175,13 @@ export default function Chat() {
     if (!newRoomName.trim()) return
     try {
       const updated = await chatApi.updateRoom(roomId, newRoomName)
-      setRooms((prev) => prev.map((r) => (r.id === roomId ? { ...r, name: updated.roomName } : r)))
-      if (currentRoom?.id === roomId) setCurrentRoom((prev) => (prev ? { ...prev, name: updated.roomName } : null))
+      setRooms((prev) =>
+        prev.map((r) => (r.id === roomId ? { ...r, name: updated.roomName } : r)),
+      )
+      if (currentRoom?.id === roomId)
+        setCurrentRoom((prev) =>
+          prev ? { ...prev, name: updated.roomName } : null,
+        )
       setRenamingRoom(null)
       setNewRoomName("")
     } catch {
@@ -145,7 +197,9 @@ export default function Chat() {
   const handleFeedback = (messageId: string, feedback: "up" | "down") => {
     setMessages((prev) =>
       prev.map((msg) =>
-        msg.id === messageId ? { ...msg, feedback: msg.feedback === feedback ? null : feedback } : msg,
+        msg.id === messageId
+          ? { ...msg, feedback: msg.feedback === feedback ? null : feedback }
+          : msg,
       ),
     )
   }
@@ -191,7 +245,11 @@ export default function Chat() {
                           autoFocus
                         />
                         <div className="flex gap-1">
-                          <Button size="sm" onClick={() => handleSaveRename(room.id)} className="h-7 px-2 text-xs">
+                          <Button
+                            size="sm"
+                            onClick={() => handleSaveRename(room.id)}
+                            className="h-7 px-2 text-xs"
+                          >
                             Save
                           </Button>
                           <Button
@@ -224,15 +282,13 @@ export default function Chat() {
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem onClick={() => handleStartRename(room)}>
-                                <Edit className="h-4 w-4 mr-2" />
-                                Rename
+                                <Edit className="h-4 w-4 mr-2" /> Rename
                               </DropdownMenuItem>
                               <DropdownMenuItem
                                 onClick={() => handleDeleteRoom(room.id)}
                                 className="text-destructive focus:text-destructive"
                               >
-                                <Trash2 className="h-4 w-4 mr-2" />
-                                Remove
+                                <Trash2 className="h-4 w-4 mr-2" /> Remove
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>

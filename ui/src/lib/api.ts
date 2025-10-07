@@ -1,4 +1,4 @@
-import jwtDecode from "jwt-decode";
+import { jwtDecode } from "jwt-decode";
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
 export type TokenResponse = {
@@ -10,15 +10,21 @@ export type TokenResponse = {
 type DecodedToken = { sub?: string; exp?: number };
 
 export function getUsernameFromToken(): string | null {
-  const token = getToken();
-  if (!token) return null;
   try {
+    const token = getToken();
+    if (!token) return null;
+
     const decoded = jwtDecode<DecodedToken>(token);
-    return decoded.sub || null;
-  } catch {
+    console.log("Decoded token:", decoded);
+    if (decoded && decoded.sub) return decoded.sub;
+
+    return null;
+  } catch (err) {
+    console.error("JWT decode failed:", err);
     return null;
   }
 }
+
 
 export async function login(username: string, password: string): Promise<TokenResponse> {
   const res = await fetch(`${API_BASE}/auth/login`, {
@@ -90,4 +96,5 @@ export default {
   setToken,
   clearToken,
   fetchWithAuth,
+  getUsernameFromToken
 };
