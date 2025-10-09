@@ -15,7 +15,6 @@ export function getUsernameFromToken(): string | null {
     if (!token) return null;
 
     const decoded = jwtDecode<DecodedToken>(token);
-    console.log("Decoded token:", decoded);
     if (decoded && decoded.sub) return decoded.sub;
 
     return null;

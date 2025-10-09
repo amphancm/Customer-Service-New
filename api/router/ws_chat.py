@@ -1,9 +1,9 @@
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
+import uuid
+from fastapi import WebSocket, WebSocketDisconnect, Depends, APIRouter
 from sqlalchemy.orm import Session
 from libs.db import SessionLocal
 from libs.llm import get_llm_response
 from schemas.models import Conversation, ChatRoom, Message, UserAccount
-from router.auth import get_current_user
 
 router = APIRouter(prefix="/ws", tags=["websocket"])
 
@@ -16,17 +16,25 @@ def get_db():
 
 @router.websocket("/chat/{room_id}/{username}")
 async def websocket_endpoint(websocket: WebSocket, room_id: str, username: str, db: Session = Depends(get_db)):
-    user = db.query(UserAccount).filter(UserAccount.username == username).first()
-    if not user:
+    try:
+        room_uuid = uuid.UUID(room_id)
+    except ValueError:
         await websocket.accept()
-        await websocket.send_text("❌ Error: User does not exist")
+        await websocket.send_text("Error: Invalid room ID format")
         await websocket.close()
         return
 
-    room = db.query(ChatRoom).filter(ChatRoom.id == room_id, ChatRoom.username == username).first()
+    user = db.query(UserAccount).filter(UserAccount.username == username).first()
+    if not user:
+        await websocket.accept()
+        await websocket.send_text("Error: User does not exist")
+        await websocket.close()
+        return
+
+    room = db.query(ChatRoom).filter(ChatRoom.id == room_uuid, ChatRoom.username == username).first()
     if not room:
         await websocket.accept()
-        await websocket.send_text("❌ Error: ChatRoom does not exist or does not belong to this user")
+        await websocket.send_text("Error: ChatRoom does not exist or does not belong to this user")
         await websocket.close()
         return
 
@@ -35,7 +43,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, username: str, 
         while True:
             data = await websocket.receive_text()
 
-            convo = Conversation(chatRoom_id=room_id, query=data, responseMessage="")
+            convo = Conversation(chatRoom_id=str(room_uuid), query=data, responseMessage="")
             db.add(convo)
             db.commit()
             db.refresh(convo)

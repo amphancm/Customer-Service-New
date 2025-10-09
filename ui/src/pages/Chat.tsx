@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import chatApi from "@/lib/chat"
 import { getUsernameFromToken } from "@/lib/api"
+import { connectChatSocket } from "@/lib/ws"
 import { uniqueNamesGenerator, adjectives, colors, animals } from "unique-names-generator"
 
 interface Room {
@@ -48,6 +49,21 @@ function generateRoomName() {
   })
 }
 
+function waitForSocketOpen(socket: WebSocket, timeout = 5000): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (socket.readyState === WebSocket.OPEN) return resolve()
+    const timer = setTimeout(() => reject(new Error("Socket timeout")), timeout)
+    socket.onopen = () => {
+      clearTimeout(timer)
+      resolve()
+    }
+    socket.onerror = () => {
+      clearTimeout(timer)
+      reject(new Error("Socket error"))
+    }
+  })
+}
+
 export default function Chat() {
   const [message, setMessage] = useState("")
   const [rooms, setRooms] = useState<Room[]>([])
@@ -59,6 +75,10 @@ export default function Chat() {
   const [error, setError] = useState<string | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [username, setUsername] = useState<string | null>(null)
+  const [socket, setSocket] = useState<WebSocket | null>(null)
+  const [isConnected, setIsConnected] = useState(false)
+
+  const suggestedQuestions = ["About Company", "About Role Responsibility", "About Project"]
 
   useEffect(() => {
     const user = getUsernameFromToken()
@@ -72,25 +92,28 @@ export default function Chat() {
     }
   }, [error])
 
-  const suggestedQuestions = ["About Company", "About Role Responsibility", "About Project"]
-
-  const mockResponses = [
-    "I'd be happy to help you with that! Our company was founded with the mission to innovate and deliver exceptional solutions to our clients. We focus on cutting-edge technology and customer satisfaction.",
-    "That's a great question! The role involves collaborating with cross-functional teams, managing projects from conception to delivery, and ensuring high-quality outcomes. You'll also be responsible for mentoring junior team members.",
-    "The project is an exciting initiative that aims to revolutionize how we approach problem-solving in our industry. It involves modern technologies, agile methodologies, and a strong focus on user experience.",
-    "Based on your query, I can provide detailed insights. Our approach combines industry best practices with innovative thinking to deliver results that exceed expectations.",
-  ]
-
   useEffect(() => {
-    const loadRooms = async () => {
+    const initChat = async () => {
       try {
         const res = await chatApi.getRooms()
-        setRooms(res.map((r) => ({ id: r.id, name: r.roomName })))
+        if (res.length === 0) {
+          const randomName = generateRoomName()
+          const created = await chatApi.createRoom(randomName)
+          const defaultRoom: Room = { id: created.id, name: created.roomName }
+          setRooms([defaultRoom])
+          setCurrentRoom(defaultRoom)
+        } else {
+          const sortedRooms = res
+            .map((r) => ({ id: r.id, name: r.roomName }))
+            .sort((a, b) => (a.id > b.id ? -1 : 1))
+          setRooms(sortedRooms)
+          setCurrentRoom(sortedRooms[0])
+        }
       } catch {
         setError("Failed to load chat rooms.")
       }
     }
-    loadRooms()
+    initChat()
   }, [])
 
   useEffect(() => {
@@ -100,19 +123,57 @@ export default function Chat() {
     })
   }, [currentRoom])
 
+  useEffect(() => {
+    if (!currentRoom) {
+      if (socket) {
+        socket.close()
+        setSocket(null)
+      }
+      setIsConnected(false)
+      return
+    }
+    const newSocket = connectChatSocket(
+      currentRoom.id,
+      (data) => {
+        const aiMessage: Message = {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: data,
+          timestamp: new Date(),
+          roomId: currentRoom.id,
+          feedback: null,
+        }
+        setMessages((prev) => [...prev, aiMessage])
+      },
+      (err) => {
+        setError(err)
+      }
+    )
+    newSocket.onopen = () => setIsConnected(true)
+    newSocket.onclose = () => setIsConnected(false)
+    setSocket(newSocket)
+    return () => {
+      newSocket.close()
+      setSocket(null)
+      setIsConnected(false)
+    }
+  }, [currentRoom])
+
   const handleSendMessage = async () => {
     if (!message.trim()) return
     try {
       let activeRoom = currentRoom
-
       if (!activeRoom) {
         const randomName = generateRoomName()
         const created = await chatApi.createRoom(randomName)
         activeRoom = { id: created.id, name: created.roomName }
-        setRooms((prev) => [...prev, activeRoom])
+        setRooms((prev) => [activeRoom!, ...prev])
         setCurrentRoom(activeRoom)
+        await new Promise((r) => setTimeout(r, 200))
       }
-
+      if (socket) {
+        await waitForSocketOpen(socket)
+      }
       const userMessage: Message = {
         id: crypto.randomUUID(),
         role: "user",
@@ -121,22 +182,10 @@ export default function Chat() {
         roomId: activeRoom.id,
       }
       setMessages((prev) => [...prev, userMessage])
+      socket?.send(message)
       setMessage("")
-
-      const randomResponse = mockResponses[Math.floor(Math.random() * mockResponses.length)]
-      const aiMessage: Message = {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content: randomResponse,
-        timestamp: new Date(),
-        roomId: activeRoom.id,
-        feedback: null,
-      }
-
-      setTimeout(() => {
-        setMessages((prev) => [...prev, aiMessage])
-      }, 500)
-    } catch {
+    } catch (err) {
+      console.error(err)
       setError("Failed to send message.")
     }
   }
@@ -147,7 +196,7 @@ export default function Chat() {
       const randomName = generateRoomName()
       const created = await chatApi.createRoom(randomName)
       const newRoom: Room = { id: created.id, name: created.roomName }
-      setRooms((prev) => [...prev, newRoom])
+      setRooms((prev) => [newRoom, ...prev])
       setCurrentRoom(newRoom)
     } catch {
       setError("Failed to create room.")
@@ -210,7 +259,7 @@ export default function Chat() {
         <div
           className={`${
             isRoomListCollapsed ? "w-0" : "w-64"
-          } bg-blacktransition-all duration-300 border-r border-border bg-muted/30 flex flex-col overflow-hidden`}
+          } transition-all duration-300 border-r border-border bg-muted/30 flex flex-col overflow-hidden`}
         >
           <div className="p-4 border-b border-border">
             <Button
@@ -222,7 +271,6 @@ export default function Chat() {
               {loading ? "Creating..." : "Create Room"}
             </Button>
           </div>
-
           <div className="flex-1 overflow-y-auto p-2">
             {rooms.length === 0 ? (
               <div className="text-center text-muted-foreground text-sm mt-8">
@@ -301,7 +349,6 @@ export default function Chat() {
             )}
           </div>
         </div>
-
         <div className="flex flex-col flex-1">
           <Button
             variant="ghost"
@@ -311,13 +358,14 @@ export default function Chat() {
           >
             {isRoomListCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
           </Button>
-
           {error && (
             <div className="px-4 py-2 bg-destructive/10 border-b border-destructive/20">
               <p className="text-destructive text-sm text-center">{error}</p>
             </div>
           )}
-
+          <div className="px-4 py-2 text-xs text-muted-foreground text-center">
+            {isConnected ? "🟢 Connected" : "🔴 Disconnected"}
+          </div>
           {messages.length > 0 ? (
             <div className="flex-1 overflow-y-auto">
               <div className="max-w-3xl mx-auto px-4 py-6 space-y-6">
@@ -370,13 +418,15 @@ export default function Chat() {
                 <h1 className="text-3xl font-semibold text-center mb-8">
                   {currentRoom ? currentRoom.name : "What can I help with?"}
                 </h1>
-
                 <div className="flex flex-wrap gap-3 justify-center mb-6">
                   {suggestedQuestions.map((question, index) => (
                     <Button
                       key={index}
                       variant="outline"
-                      onClick={() => setMessage(question)}
+                      onClick={() => {
+                        setMessage(question)
+                        if (isConnected) handleSendMessage()
+                      }}
                       className="rounded-full border-muted hover:border-primary hover:text-primary"
                     >
                       {question}
@@ -386,21 +436,21 @@ export default function Chat() {
               </div>
             </div>
           )}
-
           <div className="border-t border-border bg-background">
             <div className="max-w-3xl mx-auto px-4 py-4">
               <div className="relative">
                 <Input
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
-                  onKeyPress={(e) => e.key === "Enter" && handleSendMessage()}
-                  placeholder="Ask anything about company..."
-                  className="h-12 pr-12 rounded-3xl shadow-sm"
+                  onKeyPress={(e) => e.key === "Enter" && isConnected && handleSendMessage()}
+                  placeholder={isConnected ? "Ask anything about company..." : "Waiting for connection..."}
+                  disabled={!isConnected}
+                  className="h-12 pr-12 rounded-3xl shadow-sm disabled:bg-muted disabled:text-muted-foreground"
                 />
                 <Button
                   size="sm"
                   onClick={handleSendMessage}
-                  disabled={!message.trim()}
+                  disabled={!message.trim() || !isConnected}
                   className="absolute right-2 top-1/2 transform -translate-y-1/2 h-8 w-8 p-0 rounded-full bg-primary hover:bg-primary/90 disabled:opacity-50"
                 >
                   <Send className="h-4 w-4" />
