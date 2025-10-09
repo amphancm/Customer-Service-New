@@ -498,7 +498,7 @@ export default function Chat() {
                         setMessage(question)
                         if (isConnected) handleSendMessage()
                       }}
-                      className="rounded-full border-muted hover:border-primary hover:text-primary"
+                      className="rounded-full border-muted hover:border-primary hover:text-white"
                     >
                       {question}
                     </Button>
