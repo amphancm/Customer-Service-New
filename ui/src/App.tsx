@@ -24,10 +24,10 @@ const App = () => (
         <Routes>
           <Route path="/" element={<Login />} />
           <Route path="/documents" element={<Documents />} />
-          <Route path="/upload-files" element={<UploadFiles />} />
+          {/* <Route path="/upload-files" element={<UploadFiles />} /> */}
           <Route path="/system-prompt" element={<SystemPrompt />} />
-          <Route path="/product" element={<Product />} />
-          <Route path="/user-feedback" element={<UserFeedback />} />
+          {/* <Route path="/product" element={<Product />} />
+          <Route path="/user-feedback" element={<UserFeedback />} /> */}
           <Route path="/chat" element={<Chat />} />
           <Route path="/settings" element={<Settings />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

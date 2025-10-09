@@ -1,20 +1,12 @@
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from libs.db import SessionLocal
 from router.auth import get_current_user
 from schemas.models import ChatRoom, Conversation, Message, UserAccount
 from sqlalchemy import asc
+from dependency import get_db
 
 router = APIRouter(prefix="/chat", tags=["chat"])
-
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 
 @router.post("/create-room")

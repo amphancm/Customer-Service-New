@@ -20,10 +20,10 @@ import api from "@/lib/api";
 const menuItems = [
   { title: "Chat", url: "/chat", icon: MessageCircle },
   { title: "Documents", url: "/documents", icon: FileText },
-  { title: "Upload Documents Files", url: "/upload-files", icon: Upload },
+  // { title: "Upload Documents Files", url: "/upload-files", icon: Upload },
   { title: "System Prompt", url: "/system-prompt", icon: Target },
-  { title: "Product", url: "/product", icon: Package },
-  { title: "User Feedback", url: "/user-feedback", icon: MessageSquare },
+  // { title: "Product", url: "/product", icon: Package },
+  // { title: "User Feedback", url: "/user-feedback", icon: MessageSquare },
   { title: "Settings", url: "/settings", icon: Settings },
 ]
 

@@ -33,7 +33,6 @@ export async function login(username: string, password: string): Promise<TokenRe
   });
 
   if (!res.ok) {
-    // Try to parse JSON error body otherwise use status text
     let errMsg = res.statusText;
     try {
       const j = await res.json();

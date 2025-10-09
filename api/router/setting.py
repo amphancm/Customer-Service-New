@@ -1,17 +1,17 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from libs.db import SessionLocal
 from schemas.models import UserAccount, Setting
 from router.auth import get_current_user
 from pydantic import BaseModel
 from typing import Optional
+from dependency import get_db
 
 router = APIRouter(prefix="/setting", tags=["setting"])
-
 
 class SettingModel(BaseModel):
     isLocal: Optional[bool] = True
     isApi: Optional[bool] = False
+    domainName: Optional[str] = None         
     apiKey: Optional[str] = None
     modelName: Optional[str] = None
     temperature: Optional[float] = 0.7
@@ -20,15 +20,6 @@ class SettingModel(BaseModel):
     class Config:
         orm_mode = True
 
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
 @router.get("/", response_model=SettingModel)
 def get_setting(
     db: Session = Depends(get_db),
@@ -36,13 +27,10 @@ def get_setting(
 ):
     if not current_user.setting_id:
         raise HTTPException(status_code=404, detail="No setting assigned to this user")
-
     setting = db.query(Setting).filter(Setting.id == current_user.setting_id).first()
     if not setting:
         raise HTTPException(status_code=404, detail="Setting not found in DB")
     return setting
-
-
 
 @router.post("/", response_model=SettingModel)
 def create_setting(
@@ -50,7 +38,6 @@ def create_setting(
     db: Session = Depends(get_db),
     current_user: UserAccount = Depends(get_current_user),
 ):
-
     if current_user.setting_id:
         raise HTTPException(status_code=400, detail="User already has a setting")
 
@@ -58,7 +45,6 @@ def create_setting(
     db.add(new_setting)
     db.commit()
     db.refresh(new_setting)
-
     current_user.setting_id = new_setting.id
     db.commit()
     return new_setting
@@ -72,12 +58,10 @@ def update_setting(
     setting = db.query(Setting).filter(Setting.id == current_user.setting_id).first()
     if not setting:
         raise HTTPException(status_code=404, detail="Setting not found")
-
     update_data = setting_data.dict(exclude_unset=True)
     for key, value in update_data.items():
         if value is not None:
             setattr(setting, key, value)
-
     db.commit()
     db.refresh(setting)
     return setting
@@ -90,7 +74,6 @@ def delete_setting(
     setting = db.query(Setting).filter(Setting.id == current_user.setting_id).first()
     if not setting:
         raise HTTPException(status_code=404, detail="Setting not found")
-
     db.delete(setting)
     current_user.setting_id = None
     db.commit()

@@ -1,18 +1,13 @@
 import uuid
 from fastapi import WebSocket, WebSocketDisconnect, Depends, APIRouter
 from sqlalchemy.orm import Session
-from libs.db import SessionLocal
 from libs.llm import get_llm_response
 from schemas.models import Conversation, ChatRoom, Message, UserAccount
+from dependency import get_db
 
 router = APIRouter(prefix="/ws", tags=["websocket"])
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+
 
 @router.websocket("/chat/{room_id}/{username}")
 async def websocket_endpoint(websocket: WebSocket, room_id: str, username: str, db: Session = Depends(get_db)):

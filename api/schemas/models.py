@@ -6,15 +6,19 @@ from datetime import datetime
 
 Base = declarative_base()
 
+
 class Setting(Base):
     __tablename__ = "setting"
+
     id = Column(Integer, primary_key=True, autoincrement=True)
-    isLocal = Column(Boolean, default=True)
-    isApi = Column(Boolean, default=False)
-    apiKey = Column(String, nullable=True)
-    modelName = Column(String, nullable=False)
-    temperature = Column(Float, default=0.7)
-    systemPrompt = Column(Text, nullable=True)
+    isLocal = Column(Boolean, nullable=True, default=None)
+    isApi = Column(Boolean, nullable=True, default=None)
+    domainName = Column(String, nullable=True, default=None)
+    apiKey = Column(String, nullable=True, default=None)
+    modelName = Column(String, nullable=True, default=None)
+    temperature = Column(Float, nullable=True, default=0.7)
+    systemPrompt = Column(Text, nullable=True, default=None)
+
     users = relationship("UserAccount", back_populates="setting")
 
 class UserAccount(Base):
@@ -23,6 +27,7 @@ class UserAccount(Base):
     password = Column(String, nullable=False)
     setting_id = Column(Integer, ForeignKey("setting.id"))
     setting = relationship("Setting", back_populates="users")
+    domainName = Column(String, nullable=True)
     documents = relationship("Document", back_populates="user")
 
 class Document(Base):

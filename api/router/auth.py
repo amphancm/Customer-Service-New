@@ -6,8 +6,8 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jwt.exceptions import InvalidTokenError
 from pwdlib import PasswordHash
 from sqlalchemy.orm import Session
+from dependency import get_db
 
-from libs.db import SessionLocal
 from schemas.models import UserAccount, Setting   
 from models import Token, TokenData, UserCreate
 
@@ -24,14 +24,6 @@ router = APIRouter(
     tags=["auth"],
     responses={404: {"description": "Not found"}},
 )
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
 
 def verify_password(plain_password, hashed_password):
     return password_hash.verify(plain_password, hashed_password)
@@ -117,14 +109,7 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
 
     hashed_pw = password_hash.hash(user.password)
 
-    init_setting = Setting(
-        isLocal=True,
-        isApi=False,
-        apiKey=None,
-        modelName="gpt-4",          
-        temperature=0.7,
-        systemPrompt=""
-    )
+    init_setting = Setting()
     db.add(init_setting)
     db.commit()
     db.refresh(init_setting)
