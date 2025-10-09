@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from libs.db import init_db
-from router import auth, chat, ws_chat, ui, setting
+from router import auth, chat, ws_chat, ui, setting, document
 
 app = FastAPI()
 init_db()
@@ -19,3 +19,4 @@ app.include_router(chat.router)
 app.include_router(ws_chat.router)
 app.include_router(ui.router)  
 app.include_router(setting.router)
+app.include_router(document.router)
