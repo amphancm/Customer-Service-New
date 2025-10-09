@@ -27,14 +27,14 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, username: str, 
     user = db.query(UserAccount).filter(UserAccount.username == username).first()
     if not user:
         await websocket.accept()
-        await websocket.send_text("Error: User does not exist")
+        # await websocket.send_text("Error: User does not exist")
         await websocket.close()
         return
 
     room = db.query(ChatRoom).filter(ChatRoom.id == room_uuid, ChatRoom.username == username).first()
     if not room:
         await websocket.accept()
-        await websocket.send_text("Error: ChatRoom does not exist or does not belong to this user")
+        # await websocket.send_text("Error: ChatRoom does not exist or does not belong to this user")
         await websocket.close()
         return
 

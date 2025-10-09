@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 import {
   Send,
   Plus,
@@ -30,6 +30,7 @@ interface Room {
   id: string
   name: string
   createdAt?: Date
+  isTemp?: boolean
 }
 
 interface Message {
@@ -78,6 +79,7 @@ export default function Chat() {
   const [socket, setSocket] = useState<WebSocket | null>(null)
   const [isConnected, setIsConnected] = useState(false)
   const [hasSentMessage, setHasSentMessage] = useState(false)
+  const messagesEndRef = useRef<HTMLDivElement | null>(null)
 
   const suggestedQuestions = ["About Company", "About Role Responsibility", "About Project"]
 
@@ -97,20 +99,26 @@ export default function Chat() {
     const initChat = async () => {
       try {
         const res = await chatApi.getRooms()
-        if (res.length === 0) {
-          const randomName = generateRoomName()
-          const created = await chatApi.createRoom(randomName)
-          const defaultRoom: Room = { id: created.id, name: created.roomName }
-          setRooms([defaultRoom])
-          setCurrentRoom(defaultRoom)
-        } else {
-          const sortedRooms = res
-            .map((r) => ({ id: r.id, name: r.roomName }))
-            .sort((a, b) => (a.id > b.id ? -1 : 1))
-          setRooms(sortedRooms)
-          setCurrentRoom(sortedRooms[0])
+        const existingRooms = res
+          .map((r) => ({ id: r.id, name: r.roomName }))
+          .sort((a, b) => (a.id > b.id ? -1 : 1))
+
+        const tempRoom: Room = {
+          id: crypto.randomUUID(),
+          name: generateRoomName(),
+          isTemp: true,
         }
+
+        setRooms([tempRoom, ...existingRooms])
+        setCurrentRoom(tempRoom)
       } catch {
+        const tempRoom: Room = {
+          id: crypto.randomUUID(),
+          name: generateRoomName(),
+          isTemp: true,
+        }
+        setRooms([tempRoom])
+        setCurrentRoom(tempRoom)
         setError("Failed to load chat rooms.")
       }
     }
@@ -126,7 +134,7 @@ export default function Chat() {
   }, [currentRoom])
 
   useEffect(() => {
-    if (!currentRoom) {
+    if (!currentRoom || currentRoom.isTemp) {
       if (socket) {
         socket.close()
         setSocket(null)
@@ -134,6 +142,7 @@ export default function Chat() {
       setIsConnected(false)
       return
     }
+
     const newSocket = connectChatSocket(
       currentRoom.id,
       (data) => {
@@ -147,13 +156,13 @@ export default function Chat() {
         }
         setMessages((prev) => [...prev, aiMessage])
       },
-      (err) => {
-        setError(err)
-      }
+      (err) => setError(err)
     )
+
     newSocket.onopen = () => setIsConnected(true)
     newSocket.onclose = () => setIsConnected(false)
     setSocket(newSocket)
+
     return () => {
       newSocket.close()
       setSocket(null)
@@ -161,7 +170,16 @@ export default function Chat() {
     }
   }, [currentRoom])
 
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+  }, [messages])
+
   const handleSelectRoom = async (room: Room) => {
+    if (room.isTemp) {
+      setMessages([])
+      setCurrentRoom(room)
+      return
+    }
     try {
       const history = await chatApi.getRoomHistory(room.id)
       const formattedMessages: Message[] = history.flatMap((msg) => [
@@ -193,17 +211,44 @@ export default function Chat() {
     if (!message.trim()) return
     try {
       let activeRoom = currentRoom
-      if (!activeRoom) {
-        const randomName = generateRoomName()
-        const created = await chatApi.createRoom(randomName)
-        activeRoom = { id: created.id, name: created.roomName }
-        setRooms((prev) => [activeRoom!, ...prev])
-        setCurrentRoom(activeRoom)
-        await new Promise((r) => setTimeout(r, 200))
-      }
-      if (socket) {
+      if (!activeRoom) return
+
+      // ✅ FIX: convert temp room to real room before sending message
+      if (activeRoom.isTemp) {
+        const created = await chatApi.createRoom(activeRoom.name)
+        const newRoom: Room = { id: created.id, name: created.roomName }
+        setRooms((prev) =>
+          prev.map((r) => (r.id === activeRoom.id ? newRoom : r))
+        )
+        setCurrentRoom(newRoom)
+        activeRoom = newRoom
+
+        const newSocket = connectChatSocket(
+          newRoom.id,
+          (data) => {
+            const aiMessage: Message = {
+              id: crypto.randomUUID(),
+              role: "assistant",
+              content: data,
+              timestamp: new Date(),
+              roomId: newRoom.id,
+              feedback: null,
+            }
+            setMessages((prev) => [...prev, aiMessage])
+          },
+          (err) => setError(err)
+        )
+        newSocket.onopen = () => setIsConnected(true)
+        newSocket.onclose = () => setIsConnected(false)
+        setSocket(newSocket)
+        await waitForSocketOpen(newSocket)
+        newSocket.send(message)
+      } else {
+        if (!socket) return
         await waitForSocketOpen(socket)
+        socket.send(message)
       }
+
       const userMessage: Message = {
         id: crypto.randomUUID(),
         role: "user",
@@ -213,7 +258,6 @@ export default function Chat() {
       }
       setMessages((prev) => [...prev, userMessage])
       setHasSentMessage(true)
-      socket?.send(message)
       setMessage("")
     } catch (err) {
       console.error(err)
@@ -221,22 +265,28 @@ export default function Chat() {
     }
   }
 
-  const handleCreateRoom = async () => {
-    try {
-      setLoading(true)
-      const randomName = generateRoomName()
-      const created = await chatApi.createRoom(randomName)
-      const newRoom: Room = { id: created.id, name: created.roomName }
-      setRooms((prev) => [newRoom, ...prev])
-      setCurrentRoom(newRoom)
-    } catch {
-      setError("Failed to create room.")
-    } finally {
-      setLoading(false)
+  const handleCreateRoom = () => {
+    const existingTemp = rooms.find((r) => r.isTemp)
+    if (existingTemp) {
+      return
     }
+
+    const tempRoom: Room = {
+      id: crypto.randomUUID(),
+      name: generateRoomName(),
+      isTemp: true,
+    }
+    setRooms((prev) => [tempRoom, ...prev])
+    setCurrentRoom(tempRoom)
   }
 
   const handleDeleteRoom = async (roomId: string) => {
+    const target = rooms.find((r) => r.id === roomId)
+    if (target?.isTemp) {
+      setRooms((prev) => prev.filter((room) => room.id !== roomId))
+      if (currentRoom?.id === roomId) setCurrentRoom(null)
+      return
+    }
     try {
       await chatApi.deleteRoom(roomId)
       setRooms((prev) => prev.filter((room) => room.id !== roomId))
@@ -253,14 +303,25 @@ export default function Chat() {
 
   const handleSaveRename = async (roomId: string) => {
     if (!newRoomName.trim()) return
+    const target = rooms.find((r) => r.id === roomId)
+    if (target?.isTemp) {
+      setRooms((prev) =>
+        prev.map((r) => (r.id === roomId ? { ...r, name: newRoomName } : r))
+      )
+      if (currentRoom?.id === roomId)
+        setCurrentRoom((prev) => (prev ? { ...prev, name: newRoomName } : null))
+      setRenamingRoom(null)
+      setNewRoomName("")
+      return
+    }
     try {
       const updated = await chatApi.updateRoom(roomId, newRoomName)
       setRooms((prev) =>
-        prev.map((r) => (r.id === roomId ? { ...r, name: updated.roomName } : r)),
+        prev.map((r) => (r.id === roomId ? { ...r, name: updated.roomName } : r))
       )
       if (currentRoom?.id === roomId)
         setCurrentRoom((prev) =>
-          prev ? { ...prev, name: updated.roomName } : null,
+          prev ? { ...prev, name: updated.roomName } : null
         )
       setRenamingRoom(null)
       setNewRoomName("")
@@ -279,29 +340,32 @@ export default function Chat() {
       prev.map((msg) =>
         msg.id === messageId
           ? { ...msg, feedback: msg.feedback === feedback ? null : feedback }
-          : msg,
-      ),
+          : msg
+      )
     )
   }
 
   return (
     <Layout>
-      <div className="flex h-full">
+      <div className="flex h-screen">
+        {/* SIDEBAR */}
         <div
           className={`${
             isRoomListCollapsed ? "w-0" : "w-64"
-          } transition-all duration-300 border-r border-border bg-muted/30 flex flex-col overflow-hidden`}
+          } transition-all duration-300 border-r border-border bg-muted/30 flex flex-col flex-shrink-0 overflow-hidden`}
         >
-          <div className="p-4 border-b border-border">
-            <Button
-              onClick={handleCreateRoom}
-              disabled={loading}
-              className="w-full bg-primary hover:bg-primary/90 rounded-lg"
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              {loading ? "Creating..." : "Create Room"}
-            </Button>
-          </div>
+          {!isRoomListCollapsed && (
+            <div className="p-4 border-b border-border">
+              <Button
+                onClick={handleCreateRoom}
+                disabled={loading}
+                className="w-full bg-primary hover:bg-primary/90 rounded-lg"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                {loading ? "Creating..." : "Create Room"}
+              </Button>
+            </div>
+          )}
           <div className="flex-1 overflow-y-auto p-2">
             {rooms.length === 0 ? (
               <div className="text-center text-muted-foreground text-sm mt-8">
@@ -349,7 +413,10 @@ export default function Chat() {
                           onClick={() => handleSelectRoom(room)}
                           className="w-full justify-between h-auto p-3 text-left group hover:bg-muted/50 hover:text-black"
                         >
-                          <span className="truncate pr-2">{room.name}</span>
+                          <span className="truncate pr-2">
+                            {room.name}
+                            {room.isTemp && " (temp)"}
+                          </span>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <div
@@ -380,7 +447,9 @@ export default function Chat() {
             )}
           </div>
         </div>
-        <div className="flex flex-col flex-1">
+
+        {/* CHAT AREA */}
+        <div className="flex flex-col flex-1 h-screen overflow-hidden">
           <Button
             variant="ghost"
             size="sm"
@@ -394,9 +463,11 @@ export default function Chat() {
               <p className="text-destructive text-sm text-center">{error}</p>
             </div>
           )}
-          <div className="px-4 py-2 text-xs text-muted-foreground text-center">
+          {/* <div className="px-4 py-2 text-xs text-muted-foreground text-center">
             {isConnected ? "🟢 Connected" : "🔴 Disconnected"}
-          </div>
+          </div> */}
+
+          {/* Messages */}
           {messages.length > 0 ? (
             <div className="flex-1 overflow-y-auto">
               <div className="max-w-3xl mx-auto px-4 py-6 space-y-6">
@@ -441,6 +512,7 @@ export default function Chat() {
                     )}
                   </div>
                 ))}
+                <div ref={messagesEndRef} />
               </div>
             </div>
           ) : (
@@ -467,21 +539,23 @@ export default function Chat() {
               </div>
             </div>
           )}
-          <div className="border-t border-border bg-background">
+
+          {/* Input */}
+          <div className="border-t border-border bg-background sticky bottom-0">
             <div className="max-w-3xl mx-auto px-4 py-4">
               <div className="relative">
                 <Input
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
-                  onKeyPress={(e) => e.key === "Enter" && isConnected && handleSendMessage()}
+                  onKeyPress={(e) => e.key === "Enter" && message.trim() && handleSendMessage()}
                   placeholder={isConnected ? "Ask anything about company..." : "Waiting for connection..."}
-                  disabled={!isConnected}
+                  disabled={!currentRoom}
                   className="h-12 pr-12 rounded-3xl shadow-sm disabled:bg-muted disabled:text-muted-foreground"
                 />
                 <Button
                   size="sm"
                   onClick={handleSendMessage}
-                  disabled={!message.trim() || !isConnected}
+                  disabled={!message.trim()}
                   className="absolute right-2 top-1/2 transform -translate-y-1/2 h-8 w-8 p-0 rounded-full bg-primary hover:bg-primary/90 disabled:opacity-50"
                 >
                   <Send className="h-4 w-4" />
