@@ -1,26 +1,11 @@
 "use client"
 
 import { useEffect, useState, useRef } from "react"
-import {
-  Send,
-  Plus,
-  MoreHorizontal,
-  Edit,
-  Trash2,
-  ChevronLeft,
-  ChevronRight,
-  ThumbsUp,
-  ThumbsDown,
-} from "lucide-react"
+import { Send, Plus, MoreHorizontal, Edit, Trash2, ChevronLeft, ChevronRight, ThumbsUp, ThumbsDown } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Layout } from "@/components/Layout"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import chatApi from "@/lib/chat"
 import { getUsernameFromToken } from "@/lib/api"
 import { connectChatSocket } from "@/lib/ws"
@@ -99,9 +84,7 @@ export default function Chat() {
     const initChat = async () => {
       try {
         const res = await chatApi.getRooms()
-        const existingRooms = res
-          .map((r) => ({ id: r.id, name: r.roomName }))
-          .sort((a, b) => (a.id > b.id ? -1 : 1))
+        const existingRooms = res.map((r) => ({ id: r.id, name: r.roomName })).sort((a, b) => (a.id > b.id ? -1 : 1))
 
         const tempRoom: Room = {
           id: crypto.randomUUID(),
@@ -156,7 +139,7 @@ export default function Chat() {
         }
         setMessages((prev) => [...prev, aiMessage])
       },
-      (err) => setError(err)
+      (err) => setError(err),
     )
 
     newSocket.onopen = () => setIsConnected(true)
@@ -213,13 +196,14 @@ export default function Chat() {
       let activeRoom = currentRoom
       if (!activeRoom) return
 
-      // ✅ FIX: convert temp room to real room before sending message
       if (activeRoom.isTemp) {
         const created = await chatApi.createRoom(activeRoom.name)
-        const newRoom: Room = { id: created.id, name: created.roomName }
-        setRooms((prev) =>
-          prev.map((r) => (r.id === activeRoom.id ? newRoom : r))
-        )
+        const newRoom: Room = { id: String(created.id), name: created.roomName, isTemp: false }
+
+        setRooms((prev) => [
+          newRoom,
+          ...prev.filter((r) => !r.isTemp),
+        ])
         setCurrentRoom(newRoom)
         activeRoom = newRoom
 
@@ -236,11 +220,13 @@ export default function Chat() {
             }
             setMessages((prev) => [...prev, aiMessage])
           },
-          (err) => setError(err)
+          (err) => setError(err),
         )
+
         newSocket.onopen = () => setIsConnected(true)
         newSocket.onclose = () => setIsConnected(false)
         setSocket(newSocket)
+
         await waitForSocketOpen(newSocket)
         newSocket.send(message)
       } else {
@@ -256,6 +242,7 @@ export default function Chat() {
         timestamp: new Date(),
         roomId: activeRoom.id,
       }
+
       setMessages((prev) => [...prev, userMessage])
       setHasSentMessage(true)
       setMessage("")
@@ -265,11 +252,10 @@ export default function Chat() {
     }
   }
 
+
   const handleCreateRoom = () => {
-    const existingTemp = rooms.find((r) => r.isTemp)
-    if (existingTemp) {
-      return
-    }
+    const hasTemp = rooms.some((r) => r.isTemp === true)
+    if (hasTemp) return
 
     const tempRoom: Room = {
       id: crypto.randomUUID(),
@@ -305,24 +291,16 @@ export default function Chat() {
     if (!newRoomName.trim()) return
     const target = rooms.find((r) => r.id === roomId)
     if (target?.isTemp) {
-      setRooms((prev) =>
-        prev.map((r) => (r.id === roomId ? { ...r, name: newRoomName } : r))
-      )
-      if (currentRoom?.id === roomId)
-        setCurrentRoom((prev) => (prev ? { ...prev, name: newRoomName } : null))
+      setRooms((prev) => prev.map((r) => (r.id === roomId ? { ...r, name: newRoomName } : r)))
+      if (currentRoom?.id === roomId) setCurrentRoom((prev) => (prev ? { ...prev, name: newRoomName } : null))
       setRenamingRoom(null)
       setNewRoomName("")
       return
     }
     try {
       const updated = await chatApi.updateRoom(roomId, newRoomName)
-      setRooms((prev) =>
-        prev.map((r) => (r.id === roomId ? { ...r, name: updated.roomName } : r))
-      )
-      if (currentRoom?.id === roomId)
-        setCurrentRoom((prev) =>
-          prev ? { ...prev, name: updated.roomName } : null
-        )
+      setRooms((prev) => prev.map((r) => (r.id === roomId ? { ...r, name: updated.roomName } : r)))
+      if (currentRoom?.id === roomId) setCurrentRoom((prev) => (prev ? { ...prev, name: updated.roomName } : null))
       setRenamingRoom(null)
       setNewRoomName("")
     } catch {
@@ -338,10 +316,8 @@ export default function Chat() {
   const handleFeedback = (messageId: string, feedback: "up" | "down") => {
     setMessages((prev) =>
       prev.map((msg) =>
-        msg.id === messageId
-          ? { ...msg, feedback: msg.feedback === feedback ? null : feedback }
-          : msg
-      )
+        msg.id === messageId ? { ...msg, feedback: msg.feedback === feedback ? null : feedback } : msg,
+      ),
     )
   }
 
@@ -350,9 +326,8 @@ export default function Chat() {
       <div className="flex h-screen">
         {/* SIDEBAR */}
         <div
-          className={`${
-            isRoomListCollapsed ? "w-0" : "w-64"
-          } transition-all duration-300 border-r border-border bg-muted/30 flex flex-col flex-shrink-0 overflow-hidden`}
+          className={`${isRoomListCollapsed ? "w-0" : "w-64"
+            } transition-all duration-300 border-r border-border bg-muted/30 flex flex-col flex-shrink-0 overflow-hidden`}
         >
           {!isRoomListCollapsed && (
             <div className="p-4 border-b border-border">
@@ -388,11 +363,7 @@ export default function Chat() {
                           autoFocus
                         />
                         <div className="flex gap-1">
-                          <Button
-                            size="sm"
-                            onClick={() => handleSaveRename(room.id)}
-                            className="h-7 px-2 text-xs"
-                          >
+                          <Button size="sm" onClick={() => handleSaveRename(room.id)} className="h-7 px-2 text-xs">
                             Save
                           </Button>
                           <Button
@@ -414,8 +385,7 @@ export default function Chat() {
                           className="w-full justify-between h-auto p-3 text-left group hover:bg-muted/50 hover:text-black"
                         >
                           <span className="truncate pr-2">
-                            {room.name}
-                            {room.isTemp && " (temp)"}
+                            {room.isTemp ? "New Chat" : room.name}
                           </span>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
@@ -491,9 +461,8 @@ export default function Chat() {
                             variant="ghost"
                             size="sm"
                             onClick={() => handleFeedback(msg.id, "up")}
-                            className={`h-7 w-7 p-0 hover:bg-muted ${
-                              msg.feedback === "up" ? "bg-muted text-primary" : ""
-                            }`}
+                            className={`h-7 w-7 p-0 hover:bg-muted ${msg.feedback === "up" ? "bg-muted text-primary" : ""
+                              }`}
                           >
                             <ThumbsUp className="h-3.5 w-3.5" />
                           </Button>
@@ -501,9 +470,8 @@ export default function Chat() {
                             variant="ghost"
                             size="sm"
                             onClick={() => handleFeedback(msg.id, "down")}
-                            className={`h-7 w-7 p-0 hover:bg-muted ${
-                              msg.feedback === "down" ? "bg-muted text-destructive" : ""
-                            }`}
+                            className={`h-7 w-7 p-0 hover:bg-muted ${msg.feedback === "down" ? "bg-muted text-destructive" : ""
+                              }`}
                           >
                             <ThumbsDown className="h-3.5 w-3.5" />
                           </Button>

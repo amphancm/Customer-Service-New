@@ -8,7 +8,7 @@ from pwdlib import PasswordHash
 from sqlalchemy.orm import Session
 
 from libs.db import SessionLocal
-from schemas.models import UserAccount   
+from schemas.models import UserAccount, Setting   
 from models import Token, TokenData, UserCreate
 
 SECRET_KEY = "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7"
@@ -117,12 +117,32 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
 
     hashed_pw = password_hash.hash(user.password)
 
+    init_setting = Setting(
+        isLocal=True,
+        isApi=False,
+        apiKey=None,
+        modelName="gpt-4",          
+        temperature=0.7,
+        systemPrompt=""
+    )
+    db.add(init_setting)
+    db.commit()
+    db.refresh(init_setting)
 
-    new_user = UserAccount(username=user.username, password=hashed_pw)
+    new_user = UserAccount(
+        username=user.username,
+        password=hashed_pw,
+        setting_id=init_setting.id
+    )
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
 
     return {
-        "data": {"username": new_user.username}
+        "data": {
+            "username": new_user.username,
+            "setting_id": new_user.setting_id
+        }
     }
+
+
