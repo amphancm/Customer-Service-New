@@ -43,7 +43,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, username: str, 
         while True:
             data = await websocket.receive_text()
 
-            convo = Conversation(chatRoom_id=str(room_uuid), query=data, responseMessage="")
+            convo = Conversation(chatRoom_id=room_uuid, query=data, responseMessage="")
             db.add(convo)
             db.commit()
             db.refresh(convo)

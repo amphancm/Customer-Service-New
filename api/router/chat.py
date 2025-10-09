@@ -2,8 +2,9 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from libs.db import SessionLocal
-from schemas.models import ChatRoom, UserAccount
 from router.auth import get_current_user
+from schemas.models import ChatRoom, Conversation, Message, UserAccount
+from sqlalchemy import asc
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -120,3 +121,47 @@ def delete_room(
     db.delete(room)
     db.commit()
     return {"message": "Room deleted successfully"}
+
+@router.get("/history/{chatroom_id}")
+def get_conversation_history(
+    chatroom_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: UserAccount = Depends(get_current_user),
+):
+    chatroom = (
+        db.query(ChatRoom)
+        .filter(ChatRoom.id == chatroom_id, ChatRoom.username == current_user.username)
+        .first()
+    )
+    if not chatroom:
+        raise HTTPException(status_code=404, detail="Chat room not found")
+
+    conversations = (
+        db.query(Conversation)
+        .filter(Conversation.chatRoom_id == chatroom_id)
+        .order_by(asc(Conversation.timestamp))
+        .all()
+    )
+
+    history = []
+    for convo in conversations:
+        msg = (
+            db.query(Message)
+            .filter(Message.conversation_id == convo.id)
+            .first()
+        )
+        history.append({
+            "conversation_id": convo.id,
+            "query": convo.query,
+            "response": convo.responseMessage,
+            "timestamp": convo.timestamp,
+            "senderUsername": msg.senderUsername if msg else None,
+            "rating": msg.rating if msg else None
+        })
+
+    return {
+        "chatroom_id": str(chatroom.id),
+        "chatroom_name": chatroom.roomName,
+        "owner": chatroom.username,
+        "messages": history
+    }

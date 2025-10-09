@@ -77,6 +77,7 @@ export default function Chat() {
   const [username, setUsername] = useState<string | null>(null)
   const [socket, setSocket] = useState<WebSocket | null>(null)
   const [isConnected, setIsConnected] = useState(false)
+  const [hasSentMessage, setHasSentMessage] = useState(false)
 
   const suggestedQuestions = ["About Company", "About Role Responsibility", "About Project"]
 
@@ -121,6 +122,7 @@ export default function Chat() {
       if (prev.length && currentRoom && prev[0]?.roomId === currentRoom.id) return prev
       return []
     })
+    setHasSentMessage(false)
   }, [currentRoom])
 
   useEffect(() => {
@@ -159,6 +161,34 @@ export default function Chat() {
     }
   }, [currentRoom])
 
+  const handleSelectRoom = async (room: Room) => {
+    try {
+      const history = await chatApi.getRoomHistory(room.id)
+      const formattedMessages: Message[] = history.flatMap((msg) => [
+        {
+          id: crypto.randomUUID(),
+          role: "user",
+          content: msg.query,
+          timestamp: new Date(msg.timestamp),
+          roomId: room.id,
+        },
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: msg.response,
+          timestamp: new Date(msg.timestamp),
+          roomId: room.id,
+        },
+      ])
+      setMessages(formattedMessages)
+      setCurrentRoom(room)
+      setHasSentMessage(formattedMessages.length > 0)
+    } catch (err) {
+      console.error(err)
+      setError("Failed to load message history.")
+    }
+  }
+
   const handleSendMessage = async () => {
     if (!message.trim()) return
     try {
@@ -182,6 +212,7 @@ export default function Chat() {
         roomId: activeRoom.id,
       }
       setMessages((prev) => [...prev, userMessage])
+      setHasSentMessage(true)
       socket?.send(message)
       setMessage("")
     } catch (err) {
@@ -315,7 +346,7 @@ export default function Chat() {
                         <Button
                           variant={currentRoom?.id === room.id ? "default" : "ghost"}
                           size="sm"
-                          onClick={() => setCurrentRoom(room)}
+                          onClick={() => handleSelectRoom(room)}
                           className="w-full justify-between h-auto p-3 text-left group hover:bg-muted/50 hover:text-black"
                         >
                           <span className="truncate pr-2">{room.name}</span>
@@ -416,7 +447,7 @@ export default function Chat() {
             <div className="flex-1 flex items-center justify-center">
               <div className="w-full max-w-2xl px-4 py-6">
                 <h1 className="text-3xl font-semibold text-center mb-8">
-                  {currentRoom ? currentRoom.name : "What can I help with?"}
+                  {!hasSentMessage ? "What can I help you today?" : currentRoom?.name}
                 </h1>
                 <div className="flex flex-wrap gap-3 justify-center mb-6">
                   {suggestedQuestions.map((question, index) => (
