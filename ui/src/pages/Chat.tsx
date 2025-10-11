@@ -3,13 +3,17 @@
 import { useEffect, useState, useRef } from "react"
 import { Send, Plus, MoreHorizontal, Edit, Trash2, ChevronLeft, ChevronRight, ThumbsUp, ThumbsDown } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { Layout } from "@/components/Layout"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import chatApi from "@/lib/chat"
 import { getUsernameFromToken } from "@/lib/api"
 import { connectChatSocket } from "@/lib/ws"
 import { uniqueNamesGenerator, adjectives, colors, animals } from "unique-names-generator"
+
+// 🆕 Markdown imports
+import ReactMarkdown from "react-markdown"
+import remarkGfm from "remark-gfm"
 
 interface Room {
   id: string
@@ -64,6 +68,7 @@ export default function Chat() {
   const [socket, setSocket] = useState<WebSocket | null>(null)
   const [isConnected, setIsConnected] = useState(false)
   const [hasSentMessage, setHasSentMessage] = useState(false)
+  const [isWaitingForResponse, setIsWaitingForResponse] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
 
   const suggestedQuestions = ["About Company", "About Role Responsibility", "About Project"]
@@ -138,6 +143,7 @@ export default function Chat() {
           feedback: null,
         }
         setMessages((prev) => [...prev, aiMessage])
+        setIsWaitingForResponse(false)
       },
       (err) => setError(err),
     )
@@ -200,10 +206,7 @@ export default function Chat() {
         const created = await chatApi.createRoom(activeRoom.name)
         const newRoom: Room = { id: String(created.id), name: created.roomName, isTemp: false }
 
-        setRooms((prev) => [
-          newRoom,
-          ...prev.filter((r) => !r.isTemp),
-        ])
+        setRooms((prev) => [newRoom, ...prev.filter((r) => !r.isTemp)])
         setCurrentRoom(newRoom)
         activeRoom = newRoom
 
@@ -219,6 +222,7 @@ export default function Chat() {
               feedback: null,
             }
             setMessages((prev) => [...prev, aiMessage])
+            setIsWaitingForResponse(false)
           },
           (err) => setError(err),
         )
@@ -246,12 +250,13 @@ export default function Chat() {
       setMessages((prev) => [...prev, userMessage])
       setHasSentMessage(true)
       setMessage("")
+      setIsWaitingForResponse(true)
     } catch (err) {
       console.error(err)
       setError("Failed to send message.")
+      setIsWaitingForResponse(false)
     }
   }
-
 
   const handleCreateRoom = () => {
     const hasTemp = rooms.some((r) => r.isTemp === true)
@@ -326,8 +331,9 @@ export default function Chat() {
       <div className="flex h-screen">
         {/* SIDEBAR */}
         <div
-          className={`${isRoomListCollapsed ? "w-0" : "w-64"
-            } transition-all duration-300 border-r border-border bg-muted/30 flex flex-col flex-shrink-0 overflow-hidden`}
+          className={`${
+            isRoomListCollapsed ? "w-0" : "w-64"
+          } transition-all duration-300 border-r border-border bg-muted/30 flex flex-col flex-shrink-0 overflow-hidden`}
         >
           {!isRoomListCollapsed && (
             <div className="p-4 border-b border-border">
@@ -352,14 +358,17 @@ export default function Chat() {
                   <div key={room.id}>
                     {renamingRoom === room.id ? (
                       <div className="p-2 space-y-2">
-                        <Input
+                        <Textarea
                           value={newRoomName}
                           onChange={(e) => setNewRoomName(e.target.value)}
-                          onKeyPress={(e) => {
-                            if (e.key === "Enter") handleSaveRename(room.id)
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" && !e.shiftKey) {
+                              e.preventDefault()
+                              handleSaveRename(room.id)
+                            }
                             if (e.key === "Escape") handleCancelRename()
                           }}
-                          className="h-8 text-sm"
+                          className="h-8 text-sm min-h-8"
                           autoFocus
                         />
                         <div className="flex gap-1">
@@ -384,9 +393,7 @@ export default function Chat() {
                           onClick={() => handleSelectRoom(room)}
                           className="w-full justify-between h-auto p-3 text-left group hover:bg-muted/50 hover:text-black"
                         >
-                          <span className="truncate pr-2">
-                            {room.isTemp ? "New Chat" : room.name}
-                          </span>
+                          <span className="truncate pr-2">{room.isTemp ? "New Chat" : room.name}</span>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <div
@@ -433,9 +440,6 @@ export default function Chat() {
               <p className="text-destructive text-sm text-center">{error}</p>
             </div>
           )}
-          {/* <div className="px-4 py-2 text-xs text-muted-foreground text-center">
-            {isConnected ? "🟢 Connected" : "🔴 Disconnected"}
-          </div> */}
 
           {/* Messages */}
           {messages.length > 0 ? (
@@ -446,14 +450,16 @@ export default function Chat() {
                     {msg.role === "user" ? (
                       <div className="flex justify-end">
                         <div className="bg-primary text-primary-foreground rounded-2xl px-4 py-3 max-w-[80%]">
-                          <p className="text-sm leading-relaxed">{msg.content}</p>
+                          <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content}</p>
                         </div>
                       </div>
                     ) : (
                       <div className="space-y-2">
                         <div className="flex justify-start">
-                          <div className="bg-muted rounded-2xl px-4 py-3 max-w-[80%]">
-                            <p className="text-sm leading-relaxed">{msg.content}</p>
+                          <div className="bg-muted rounded-2xl px-4 py-3 max-w-[80%] prose prose-sm dark:prose-invert">
+                            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                              {msg.content}
+                            </ReactMarkdown>
                           </div>
                         </div>
                         <div className="flex gap-2 ml-2">
@@ -461,8 +467,9 @@ export default function Chat() {
                             variant="ghost"
                             size="sm"
                             onClick={() => handleFeedback(msg.id, "up")}
-                            className={`h-7 w-7 p-0 hover:bg-muted ${msg.feedback === "up" ? "bg-muted text-primary" : ""
-                              }`}
+                            className={`h-7 w-7 p-0 hover:bg-muted ${
+                              msg.feedback === "up" ? "bg-muted text-primary" : ""
+                            }`}
                           >
                             <ThumbsUp className="h-3.5 w-3.5" />
                           </Button>
@@ -470,8 +477,9 @@ export default function Chat() {
                             variant="ghost"
                             size="sm"
                             onClick={() => handleFeedback(msg.id, "down")}
-                            className={`h-7 w-7 p-0 hover:bg-muted ${msg.feedback === "down" ? "bg-muted text-destructive" : ""
-                              }`}
+                            className={`h-7 w-7 p-0 hover:bg-muted ${
+                              msg.feedback === "down" ? "bg-muted text-destructive" : ""
+                            }`}
                           >
                             <ThumbsDown className="h-3.5 w-3.5" />
                           </Button>
@@ -480,6 +488,17 @@ export default function Chat() {
                     )}
                   </div>
                 ))}
+                {isWaitingForResponse && (
+                  <div className="flex justify-start">
+                    <div className="bg-muted rounded-2xl px-4 py-3">
+                      <div className="flex gap-1 items-center">
+                        <div className="w-2 h-2 bg-muted-foreground/60 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                        <div className="w-2 h-2 bg-muted-foreground/60 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                                                <div className="w-2 h-2 bg-muted-foreground/60 rounded-full animate-bounce"></div>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 <div ref={messagesEndRef} />
               </div>
             </div>
@@ -512,19 +531,27 @@ export default function Chat() {
           <div className="border-t border-border bg-background sticky bottom-0">
             <div className="max-w-3xl mx-auto px-4 py-4">
               <div className="relative">
-                <Input
+                <Textarea
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
-                  onKeyPress={(e) => e.key === "Enter" && message.trim() && handleSendMessage()}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault()
+                      if (message.trim()) {
+                        handleSendMessage()
+                      }
+                    }
+                  }}
                   placeholder={isConnected ? "Ask anything about company..." : "Waiting for connection..."}
                   disabled={!currentRoom}
-                  className="h-12 pr-12 rounded-3xl shadow-sm disabled:bg-muted disabled:text-muted-foreground"
+                  className="min-h-12 max-h-32 pr-12 rounded-3xl shadow-sm disabled:bg-muted disabled:text-muted-foreground resize-none"
+                  rows={1}
                 />
                 <Button
                   size="sm"
                   onClick={handleSendMessage}
                   disabled={!message.trim()}
-                  className="absolute right-2 top-1/2 transform -translate-y-1/2 h-8 w-8 p-0 rounded-full bg-primary hover:bg-primary/90 disabled:opacity-50"
+                  className="absolute right-2 bottom-2 h-8 w-8 p-0 rounded-full bg-primary hover:bg-primary/90 disabled:opacity-50"
                 >
                   <Send className="h-4 w-4" />
                 </Button>
