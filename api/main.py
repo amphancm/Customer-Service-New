@@ -22,7 +22,7 @@ def on_startup():
 
         new_user = UserAccount(
             username="admin",
-            password=get_password_hash("password"),
+            password=get_password_hash("admin"),
             setting_id=init_setting.id
         )
         db.add(new_user)
