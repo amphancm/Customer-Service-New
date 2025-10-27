@@ -6,6 +6,7 @@ from dependency import get_db
 from router.auth import get_user, get_password_hash
 from schemas.models import UserAccount, Setting
 from sqlalchemy.orm import Session
+from config import cors_origins
 
 app = FastAPI()
 
@@ -31,7 +32,7 @@ def on_startup():
 
 app.add_middleware(
 	CORSMiddleware,
-	allow_origins=["http://localhost:8080", "http://127.0.0.1:8080"],
+	allow_origins=cors_origins,
 	allow_credentials=True,
 	allow_methods=["*"],
 	allow_headers=["*"],
