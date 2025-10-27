@@ -6,7 +6,6 @@ from dependency import get_db
 from router.auth import get_user, get_password_hash
 from schemas.models import UserAccount, Setting
 from sqlalchemy.orm import Session
-from config import cors_origins
 
 app = FastAPI()
 
@@ -30,9 +29,12 @@ def on_startup():
         db.commit()
         db.refresh(new_user)
 
+# This regex allows requests from localhost, 127.0.0.1, and local IP addresses.
+allow_origin_regex = r"http://(localhost|127\.0\.0\.1|192\.168\..*):\d+"
+
 app.add_middleware(
 	CORSMiddleware,
-	allow_origins=cors_origins,
+	allow_origin_regex=allow_origin_regex,
 	allow_credentials=True,
 	allow_methods=["*"],
 	allow_headers=["*"],
