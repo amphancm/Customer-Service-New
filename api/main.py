@@ -11,24 +11,24 @@ app = FastAPI()
 init_db()
 
 # Create default user
-# def create_default_user():
-#     with get_db() as db:
-#         if not get_user(db, "admin"):
-#             init_setting = Setting()
-#             db.add(init_setting)
-#             db.commit()
-#             db.refresh(init_setting)
+def create_default_user():
+    with get_db() as db:
+        if not get_user(db, "admin"):
+            init_setting = Setting()
+            db.add(init_setting)
+            db.commit()
+            db.refresh(init_setting)
 
-#             new_user = UserAccount(
-#                 username="admin",
-#                 password=get_password_hash("password"),
-#                 setting_id=init_setting.id
-#             )
-#             db.add(new_user)
-#             db.commit()
-#             db.refresh(new_user)
+            new_user = UserAccount(
+                username="admin",
+                password=get_password_hash("password"),
+                setting_id=init_setting.id
+            )
+            db.add(new_user)
+            db.commit()
+            db.refresh(new_user)
 
-# create_default_user()
+create_default_user()
 
 app.add_middleware(
 	CORSMiddleware,
