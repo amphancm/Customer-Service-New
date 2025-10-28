@@ -8,3 +8,9 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Database file
+storage/app.db
+
+# Log files
+server.log
