@@ -29,9 +29,12 @@ def on_startup():
         db.commit()
         db.refresh(new_user)
 
+# This regex allows requests from localhost, 127.0.0.1, and local IP addresses.
+allow_origin_regex = r"http://(localhost|127\.0\.0\.1|192\.168\..*):\d+"
+
 app.add_middleware(
 	CORSMiddleware,
-	allow_origins=["http://localhost:8080", "http://127.0.0.1:8080"],
+	allow_origin_regex=allow_origin_regex,
 	allow_credentials=True,
 	allow_methods=["*"],
 	allow_headers=["*"],
